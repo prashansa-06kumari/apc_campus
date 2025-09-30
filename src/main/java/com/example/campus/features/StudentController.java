@@ -64,6 +64,12 @@ public class StudentController {
     @Autowired
     private LibraryRepository libraryRepository;
 
+    @Autowired
+    private TestRepository testRepository;
+
+    @Autowired
+    private TestSubmissionRepository testSubmissionRepository;
+
     @GetMapping("/dashboard")
     public ResponseEntity<?> dashboard(@AuthenticationPrincipal UserDetails userDetails) {
         try {
@@ -204,6 +210,21 @@ public class StudentController {
         }
     }
 
+    @GetMapping("/my-feedback")
+    public ResponseEntity<?> getMyFeedback(@AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            List<Feedback> myFeedback = feedbackRepository.findByStudentId(user.getId());
+            return ResponseEntity.ok(myFeedback);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @GetMapping("/fees")
     public ResponseEntity<?> getFees(@AuthenticationPrincipal UserDetails userDetails) {
         try {
@@ -243,6 +264,40 @@ public class StudentController {
 
             feedbackRepository.save(newFeedback);
             return ResponseEntity.ok(Map.of("message", "Feedback submitted successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/fees/{feeId}/pay")
+    public ResponseEntity<?> payFee(@PathVariable Long feeId, @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            Fee fee = feeRepository.findById(feeId).orElse(null);
+            if (fee == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Fee not found"));
+            }
+
+            if (!fee.getStudentId().equals(user.getId())) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Unauthorized access"));
+            }
+
+            if (fee.getStatus() == Fee.PaymentStatus.PAID) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Fee already paid"));
+            }
+
+            // Update fee status to PAID
+            fee.setStatus(Fee.PaymentStatus.PAID);
+            fee.setPaidDate(LocalDateTime.now());
+            fee.setPaymentMethod("Online Payment");
+            fee.setTransactionId("TXN" + System.currentTimeMillis());
+
+            feeRepository.save(fee);
+            return ResponseEntity.ok(Map.of("message", "Fee paid successfully"));
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
@@ -403,6 +458,180 @@ public class StudentController {
             }
 
             return ResponseEntity.ok(subjects);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // Test Management Endpoints for Students
+    @GetMapping("/tests")
+    public ResponseEntity<?> getTests(@AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            // Get all active tests
+            List<Test> tests = testRepository.findByIsActiveTrue();
+            
+            // Filter tests that are scheduled for today or future
+            LocalDate today = LocalDate.now();
+            List<Test> upcomingTests = tests.stream()
+                .filter(test -> !test.getTestDate().isBefore(today))
+                .collect(java.util.stream.Collectors.toList());
+
+            return ResponseEntity.ok(upcomingTests);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/tests/{testId}")
+    public ResponseEntity<?> getTest(@PathVariable Long testId, @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            Test test = testRepository.findById(testId).orElse(null);
+            if (test == null || !test.getIsActive()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Test not found"));
+            }
+
+            return ResponseEntity.ok(test);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/tests/{testId}/submit")
+    public ResponseEntity<?> submitTest(@PathVariable Long testId, @RequestBody Map<String, Object> submissionData, @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            Test test = testRepository.findById(testId).orElse(null);
+            if (test == null || !test.getIsActive()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Test not found"));
+            }
+
+            // Check if test is still open for submission
+            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime testEndTime = test.getTestDate().atTime(
+                java.time.LocalTime.parse(test.getEndTime())
+            );
+            
+            if (now.isAfter(testEndTime)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Test submission deadline has passed"));
+            }
+
+            // Check if student has already submitted
+            Optional<TestSubmission> existingSubmission = testSubmissionRepository.findByTestIdAndStudentId(testId, user.getId());
+            if (existingSubmission.isPresent()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Test already submitted"));
+            }
+
+            TestSubmission submission = new TestSubmission();
+            submission.setTestId(testId);
+            submission.setStudentId(user.getId());
+            submission.setSubmissionText(submissionData.get("submissionText").toString());
+            submission.setSubmittedAt(LocalDateTime.now());
+            submission.setStatus(TestSubmission.SubmissionStatus.SUBMITTED);
+
+            testSubmissionRepository.save(submission);
+            return ResponseEntity.ok(Map.of("message", "Test submitted successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/tests/{testId}/submission")
+    public ResponseEntity<?> getTestSubmission(@PathVariable Long testId, @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            Optional<TestSubmission> submission = testSubmissionRepository.findByTestIdAndStudentId(testId, user.getId());
+            if (submission.isEmpty()) {
+                return ResponseEntity.ok(Map.of("submission", null, "message", "No submission found"));
+            }
+
+            return ResponseEntity.ok(Map.of("submission", submission.get(), "message", "Submission found"));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to get submission: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/test-submissions")
+    public ResponseEntity<?> getMyTestSubmissions(@AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            List<TestSubmission> submissions = testSubmissionRepository.findByStudentId(user.getId());
+            return ResponseEntity.ok(submissions);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/test-results")
+    public ResponseEntity<?> getTestResults(@AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            // Get all graded submissions for this student
+            List<TestSubmission> gradedSubmissions = testSubmissionRepository.findByStudentId(user.getId())
+                .stream()
+                .filter(submission -> submission.getStatus() == TestSubmission.SubmissionStatus.GRADED)
+                .collect(java.util.stream.Collectors.toList());
+
+            // Get test details for each submission
+            List<Map<String, Object>> results = new ArrayList<>();
+            for (TestSubmission submission : gradedSubmissions) {
+                Test test = testRepository.findById(submission.getTestId()).orElse(null);
+                if (test != null) {
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("testId", test.getId());
+                    result.put("testTitle", test.getTitle());
+                    result.put("subject", test.getSubject());
+                    result.put("maxMarks", test.getMaxMarks());
+                    result.put("marksObtained", submission.getMarksObtained());
+                    result.put("feedback", submission.getFeedback());
+                    result.put("gradedBy", submission.getGradedBy());
+                    result.put("gradedAt", submission.getGradedAt());
+                    result.put("percentage", (submission.getMarksObtained() * 100.0) / test.getMaxMarks());
+                    results.add(result);
+                }
+            }
+
+            return ResponseEntity.ok(results);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/assignments")
+    public ResponseEntity<?> getAssignments(@AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            List<Assignment> assignments = assignmentRepository.findUpcomingAssignments(LocalDateTime.now());
+            return ResponseEntity.ok(assignments);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }

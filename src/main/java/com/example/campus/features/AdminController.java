@@ -55,6 +55,9 @@ public class AdminController {
 
     @Autowired
     private LibraryRepository libraryRepository;
+    
+    @Autowired
+    private StudentRepository studentRepository;
 
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -157,10 +160,65 @@ public class AdminController {
         for (User student : students) {
             Map<String, Object> map = new HashMap<>();
             map.put("id", student.getId());
-            map.put("name", student.getName());
+            map.put("name", student.getName() != null ? student.getName() : student.getUsername());
+            map.put("rollNumber", student.getStudentId() != null ? student.getStudentId() : "N/A");
+            map.put("department", "Computer Science"); // Default department
+            map.put("email", student.getUsername() + "@university.edu");
+            map.put("phone", "N/A");
             response.add(map);
         }
         return response;
+    }
+
+    // Mark student attendance
+    @PostMapping("/attendance")
+    public ResponseEntity<?> markAttendance(@RequestBody Map<String, Object> attendanceData, @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            Long studentId = Long.valueOf(attendanceData.get("studentId").toString());
+            
+            // Get student username from database
+            User student = userRepository.findById(studentId).orElse(null);
+            if (student == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Student not found"));
+            }
+            
+            Attendance attendance = new Attendance();
+            attendance.setStudentId(studentId);
+            attendance.setStudentName(student.getUsername());
+            attendance.setSubject(attendanceData.get("subject").toString());
+            attendance.setStatus(Attendance.AttendanceStatus.valueOf(attendanceData.get("status").toString()));
+            attendance.setDate(LocalDate.parse(attendanceData.get("date").toString()));
+            attendance.setMarkedBy(user.getUsername());
+
+            attendanceRepository.save(attendance);
+            return ResponseEntity.ok(Map.of("message", "Attendance marked successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // Create sample students for testing
+    @PostMapping("/students/sample")
+    public ResponseEntity<?> createSampleStudents() {
+        try {
+            List<Student> sampleStudents = Arrays.asList(
+                new Student("CS001", "John Doe", "Computer Science", "john.doe@email.com", "1234567890", "123 Main St", 3.5, 3.2, 3.8, 3.6, "2024-25", "3"),
+                new Student("CS002", "Jane Smith", "Computer Science", "jane.smith@email.com", "1234567891", "456 Oak Ave", 3.8, 3.6, 3.9, 3.7, "2024-25", "3"),
+                new Student("CS003", "Mike Johnson", "Computer Science", "mike.johnson@email.com", "1234567892", "789 Pine Rd", 3.2, 3.0, 3.4, 3.3, "2024-25", "3"),
+                new Student("IT001", "Sarah Wilson", "Information Technology", "sarah.wilson@email.com", "1234567893", "321 Elm St", 3.6, 3.4, 3.7, 3.5, "2024-25", "3"),
+                new Student("IT002", "David Brown", "Information Technology", "david.brown@email.com", "1234567894", "654 Maple Dr", 3.4, 3.2, 3.5, 3.4, "2024-25", "3")
+            );
+            
+            studentRepository.saveAll(sampleStudents);
+            return ResponseEntity.ok("Sample students created successfully");
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
     }
 
 
@@ -222,6 +280,60 @@ public class AdminController {
         try {
             List<Attendance> allAttendance = attendanceRepository.findAll();
             return ResponseEntity.ok(allAttendance);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/marks")
+    public ResponseEntity<?> getAllMarks(@AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            List<Mark> allMarks = markRepository.findAll();
+            List<Map<String, Object>> marksWithStudentNames = new ArrayList<>();
+            
+            for (Mark mark : allMarks) {
+                Map<String, Object> markData = new HashMap<>();
+                markData.put("id", mark.getId());
+                markData.put("studentId", mark.getStudentId());
+                markData.put("studentName", "Student " + mark.getStudentId()); // You can enhance this to get actual student name
+                markData.put("subject", mark.getSubject());
+                markData.put("examType", mark.getExamType());
+                markData.put("marksObtained", mark.getMarksObtained());
+                markData.put("maxMarks", mark.getMaxMarks());
+                markData.put("semester", mark.getSemester());
+                markData.put("academicYear", mark.getAcademicYear());
+                markData.put("createdAt", mark.getCreatedAt());
+                marksWithStudentNames.add(markData);
+            }
+            
+            return ResponseEntity.ok(marksWithStudentNames);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/marks/bulk")
+    public ResponseEntity<?> addBulkMarks(@RequestBody List<Map<String, Object>> marksData, @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            List<Mark> marksToSave = new ArrayList<>();
+            
+            for (Map<String, Object> markData : marksData) {
+                Mark mark = new Mark();
+                mark.setStudentId(((Number) markData.get("studentId")).longValue());
+                mark.setSubject((String) markData.get("subject"));
+                mark.setExamType(Mark.ExamType.valueOf((String) markData.get("examType")));
+                mark.setMarksObtained(((Number) markData.get("marksObtained")).intValue());
+                mark.setMaxMarks(((Number) markData.get("maxMarks")).intValue());
+                mark.setSemester((String) markData.get("semester"));
+                mark.setAcademicYear((String) markData.get("academicYear"));
+                mark.setEnteredBy(userDetails.getUsername());
+                mark.setCreatedAt(LocalDateTime.now());
+                
+                marksToSave.add(mark);
+            }
+            
+            markRepository.saveAll(marksToSave);
+            return ResponseEntity.ok("Marks added successfully");
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }

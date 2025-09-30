@@ -47,6 +47,12 @@ public class FacultyController {
     @Autowired
     private TimetableRepository timetableRepository;
 
+    @Autowired
+    private TestRepository testRepository;
+
+    @Autowired
+    private TestSubmissionRepository testSubmissionRepository;
+
     @GetMapping("/dashboard")
     public ResponseEntity<?> dashboard(@AuthenticationPrincipal UserDetails userDetails) {
         try {
@@ -212,6 +218,22 @@ public class FacultyController {
     public ResponseEntity<?> getNotifications(@AuthenticationPrincipal UserDetails userDetails) {
         try {
             List<Notification> notifications = notificationRepository.findByTargetRoleOrAll(Notification.TargetRole.FACULTY);
+            return ResponseEntity.ok(notifications);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/my-notifications")
+    public ResponseEntity<?> getMyNotifications(@AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+            
+            // Fetch notifications created by this faculty member
+            List<Notification> notifications = notificationRepository.findByCreatedBy(user.getUsername());
             return ResponseEntity.ok(notifications);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
@@ -399,6 +421,364 @@ public class FacultyController {
             }
 
             return ResponseEntity.ok(weeklyTimetable);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // Test Management Endpoints
+    @PostMapping("/tests")
+    public ResponseEntity<?> createTest(@RequestBody Map<String, Object> testData, @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            // Validate required fields
+            if (testData.get("title") == null || testData.get("title").toString().trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Title is required"));
+            }
+            if (testData.get("subject") == null || testData.get("subject").toString().trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Subject is required"));
+            }
+            if (testData.get("maxMarks") == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Max marks is required"));
+            }
+            if (testData.get("testDate") == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Test date is required"));
+            }
+            if (testData.get("startTime") == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Start time is required"));
+            }
+            if (testData.get("endTime") == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "End time is required"));
+            }
+
+            Test test = new Test();
+            test.setTitle(testData.get("title").toString().trim());
+            test.setDescription(testData.get("description") != null ? testData.get("description").toString() : "");
+            test.setSubject(testData.get("subject").toString().trim());
+            test.setMaxMarks(Integer.valueOf(testData.get("maxMarks").toString()));
+            test.setTestDate(LocalDate.parse(testData.get("testDate").toString()));
+            test.setStartTime(testData.get("startTime").toString());
+            test.setEndTime(testData.get("endTime").toString());
+            test.setDurationMinutes(testData.get("durationMinutes") != null ? Integer.valueOf(testData.get("durationMinutes").toString()) : 60);
+            test.setInstructions(testData.get("instructions") != null ? testData.get("instructions").toString() : "");
+            test.setCreatedBy(user.getUsername());
+            test.setSemester(testData.get("semester") != null ? testData.get("semester").toString() : "Fall 2025");
+            test.setAcademicYear(testData.get("academicYear") != null ? testData.get("academicYear").toString() : "2025-2026");
+            test.setIsActive(true);
+
+            testRepository.save(test);
+            return ResponseEntity.ok(Map.of("message", "Test created successfully", "testId", test.getId()));
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid number format for max marks or duration"));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to create test: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/tests")
+    public ResponseEntity<?> getTests(@AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            List<Test> tests = testRepository.findByCreatedByAndIsActiveTrue(user.getUsername());
+            return ResponseEntity.ok(tests);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/tests/{testId}")
+    public ResponseEntity<?> getTest(@PathVariable Long testId, @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            Test test = testRepository.findById(testId).orElse(null);
+            if (test == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Test not found"));
+            }
+
+            if (!test.getCreatedBy().equals(user.getUsername())) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Unauthorized access"));
+            }
+
+            return ResponseEntity.ok(test);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/tests/{testId}")
+    public ResponseEntity<?> updateTest(@PathVariable Long testId, @RequestBody Map<String, Object> testData, @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            Test test = testRepository.findById(testId).orElse(null);
+            if (test == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Test not found"));
+            }
+
+            if (!test.getCreatedBy().equals(user.getUsername())) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Unauthorized access"));
+            }
+
+            test.setTitle(testData.get("title").toString());
+            test.setDescription(testData.get("description").toString());
+            test.setSubject(testData.get("subject").toString());
+            test.setMaxMarks(Integer.valueOf(testData.get("maxMarks").toString()));
+            test.setTestDate(LocalDate.parse(testData.get("testDate").toString()));
+            test.setStartTime(testData.get("startTime").toString());
+            test.setEndTime(testData.get("endTime").toString());
+            test.setDurationMinutes(Integer.valueOf(testData.get("durationMinutes").toString()));
+            test.setInstructions(testData.get("instructions").toString());
+            test.setSemester(testData.get("semester").toString());
+            test.setAcademicYear(testData.get("academicYear").toString());
+
+            testRepository.save(test);
+            return ResponseEntity.ok(Map.of("message", "Test updated successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/tests/{testId}")
+    public ResponseEntity<?> deleteTest(@PathVariable Long testId, @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            Test test = testRepository.findById(testId).orElse(null);
+            if (test == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Test not found"));
+            }
+
+            if (!test.getCreatedBy().equals(user.getUsername())) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Unauthorized access"));
+            }
+
+            test.setIsActive(false);
+            testRepository.save(test);
+            return ResponseEntity.ok(Map.of("message", "Test deleted successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/tests/{testId}/submissions")
+    public ResponseEntity<?> getTestSubmissions(@PathVariable Long testId, @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            Test test = testRepository.findById(testId).orElse(null);
+            if (test == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Test not found"));
+            }
+
+            if (!test.getCreatedBy().equals(user.getUsername())) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Unauthorized access"));
+            }
+
+            List<TestSubmission> submissions = testSubmissionRepository.findByTestId(testId);
+            return ResponseEntity.ok(submissions);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/tests/{testId}/submissions/{submissionId}/grade")
+    public ResponseEntity<?> gradeSubmission(@PathVariable Long testId, @PathVariable Long submissionId, 
+                                           @RequestBody Map<String, Object> gradeData, @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            Test test = testRepository.findById(testId).orElse(null);
+            if (test == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Test not found"));
+            }
+
+            if (!test.getCreatedBy().equals(user.getUsername())) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Unauthorized access"));
+            }
+
+            TestSubmission submission = testSubmissionRepository.findById(submissionId).orElse(null);
+            if (submission == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Submission not found"));
+            }
+
+            if (!submission.getTestId().equals(testId)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Invalid submission for this test"));
+            }
+
+            submission.setMarksObtained(Integer.valueOf(gradeData.get("marksObtained").toString()));
+            submission.setFeedback(gradeData.get("feedback").toString());
+            submission.setGradedBy(user.getUsername());
+            submission.setGradedAt(LocalDateTime.now());
+            submission.setStatus(TestSubmission.SubmissionStatus.GRADED);
+
+            testSubmissionRepository.save(submission);
+            return ResponseEntity.ok(Map.of("message", "Submission graded successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/tests/{testId}/statistics")
+    public ResponseEntity<?> getTestStatistics(@PathVariable Long testId, @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            Test test = testRepository.findById(testId).orElse(null);
+            if (test == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Test not found"));
+            }
+
+            if (!test.getCreatedBy().equals(user.getUsername())) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Unauthorized access"));
+            }
+
+            Long totalSubmissions = testSubmissionRepository.countByTestId(testId);
+            Long submittedCount = testSubmissionRepository.countByTestIdAndStatus(testId, TestSubmission.SubmissionStatus.SUBMITTED);
+            Long gradedCount = testSubmissionRepository.countByTestIdAndStatus(testId, TestSubmission.SubmissionStatus.GRADED);
+            Double averageMarks = testSubmissionRepository.findAverageMarksByTestId(testId);
+
+            Map<String, Object> statistics = new HashMap<>();
+            statistics.put("totalSubmissions", totalSubmissions);
+            statistics.put("submittedCount", submittedCount);
+            statistics.put("gradedCount", gradedCount);
+            statistics.put("averageMarks", averageMarks != null ? averageMarks : 0.0);
+            statistics.put("maxMarks", test.getMaxMarks());
+
+            return ResponseEntity.ok(statistics);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/marks")
+    public ResponseEntity<?> addMark(@RequestBody Map<String, Object> markData, @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            Mark mark = new Mark();
+            mark.setStudentId(Long.valueOf(markData.get("studentId").toString()));
+            mark.setSubject(markData.get("subject").toString());
+            mark.setExamType(Mark.ExamType.valueOf(markData.get("examType").toString()));
+            mark.setMarksObtained(Integer.valueOf(markData.get("marksObtained").toString()));
+            mark.setMaxMarks(Integer.valueOf(markData.get("maxMarks").toString()));
+            mark.setSemester(markData.get("semester").toString());
+            mark.setAcademicYear(markData.get("academicYear").toString());
+            mark.setEnteredBy(user.getUsername());
+
+            markRepository.save(mark);
+            return ResponseEntity.ok(Map.of("message", "Mark added successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/marks")
+    public ResponseEntity<?> getMarks(@AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            List<Mark> marks = markRepository.findAll();
+            List<Map<String, Object>> marksList = new ArrayList<>();
+
+            for (Mark mark : marks) {
+                Map<String, Object> markData = new HashMap<>();
+                markData.put("id", mark.getId());
+                markData.put("studentId", mark.getStudentId());
+                markData.put("subject", mark.getSubject());
+                markData.put("examType", mark.getExamType());
+                markData.put("marksObtained", mark.getMarksObtained());
+                markData.put("maxMarks", mark.getMaxMarks());
+                markData.put("semester", mark.getSemester());
+                markData.put("academicYear", mark.getAcademicYear());
+                markData.put("enteredBy", mark.getEnteredBy());
+                markData.put("createdAt", mark.getCreatedAt());
+                marksList.add(markData);
+            }
+
+            return ResponseEntity.ok(marksList);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // Assignment Management Endpoints
+    @PostMapping("/assignments")
+    public ResponseEntity<?> createAssignment(@RequestBody Map<String, Object> assignmentData, @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            // Validate required fields
+            if (assignmentData.get("title") == null || assignmentData.get("title").toString().trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Title is required"));
+            }
+            if (assignmentData.get("subject") == null || assignmentData.get("subject").toString().trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Subject is required"));
+            }
+            if (assignmentData.get("maxMarks") == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Max marks is required"));
+            }
+            if (assignmentData.get("dueDate") == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Due date is required"));
+            }
+
+            Assignment assignment = new Assignment();
+            assignment.setTitle(assignmentData.get("title").toString().trim());
+            assignment.setDescription(assignmentData.get("description") != null ? assignmentData.get("description").toString() : "");
+            assignment.setSubject(assignmentData.get("subject").toString().trim());
+            assignment.setMaxMarks(Integer.valueOf(assignmentData.get("maxMarks").toString()));
+            assignment.setDueDate(LocalDateTime.parse(assignmentData.get("dueDate").toString()));
+            assignment.setAssignedBy(user.getUsername());
+
+            assignmentRepository.save(assignment);
+            return ResponseEntity.ok(Map.of("message", "Assignment created successfully", "assignmentId", assignment.getId()));
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid number format for max marks"));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to create assignment: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/assignments")
+    public ResponseEntity<?> getAssignments(@AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+            }
+
+            List<Assignment> assignments = assignmentRepository.findByAssignedBy(user.getUsername());
+            return ResponseEntity.ok(assignments);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }

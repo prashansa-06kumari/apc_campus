@@ -11,7 +11,7 @@ interface StudentProfile {
   username: string;
   role: string;
   studentId: string;
-
+  cgpa?: number;
 }
 
 interface TimetableEntry {
@@ -56,8 +56,10 @@ interface Fee {
   id: number;
   feeType: string;
   amount: number;
-  paidAmount: number;
   dueDate: string;
+  paidDate?: string;
+  paymentMethod?: string;
+  transactionId?: string;
   status: string;
 }
 
@@ -78,6 +80,49 @@ interface IssuedBook {
   dueDate: string;
 }
 
+interface Test {
+  id: number;
+  title: string;
+  description: string;
+  subject: string;
+  maxMarks: number;
+  testDate: string;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  instructions: string;
+  createdBy: string;
+  semester: string;
+  academicYear: string;
+  status: string;
+  isActive: boolean;
+}
+
+interface TestSubmission {
+  id: number;
+  testId: number;
+  studentId: number;
+  submissionText: string;
+  submittedAt: string;
+  marksObtained: number;
+  feedback: string;
+  gradedBy: string;
+  gradedAt: string;
+  status: string;
+}
+
+interface TestResult {
+  testId: number;
+  testTitle: string;
+  subject: string;
+  maxMarks: number;
+  marksObtained: number;
+  feedback: string;
+  gradedBy: string;
+  gradedAt: string;
+  percentage: number;
+}
+
 
 const StudentDashboard: React.FC = () => {
   const { user, logout } = useAuth();
@@ -93,6 +138,11 @@ const StudentDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 const [issuedBooks, setIssuedBooks] = useState<IssuedBook[]>([]);
+  const [tests, setTests] = useState<Test[]>([]);
+  const [testResults, setTestResults] = useState<TestResult[]>([]);
+  const [selectedTest, setSelectedTest] = useState<Test | null>(null);
+  const [testSubmission, setTestSubmission] = useState<TestSubmission | null>(null);
+  const [myFeedback, setMyFeedback] = useState<any[]>([]);
 
 
 useEffect(() => {
@@ -114,6 +164,46 @@ const fetchLibraryBooks = async () => {
     setIssuedBooks(res.data);
   } catch (err) {
     console.error('Error fetching issued books:', err);
+  }
+};
+
+const fetchTests = async () => {
+  try {
+    const res = await api.get('/student/tests');
+    setTests(res.data || []);
+  } catch (err) {
+    console.error('Error fetching tests:', err);
+  }
+};
+
+const fetchTestResults = async () => {
+  try {
+    const res = await api.get('/student/test-results');
+    setTestResults(res.data || []);
+  } catch (err) {
+    console.error('Error fetching test results:', err);
+  }
+};
+
+const fetchTestSubmission = async (testId: number) => {
+  try {
+    const res = await api.get(`/student/tests/${testId}/submission`);
+    setTestSubmission(res.data.submission);
+  } catch (err) {
+    console.error('Error fetching test submission:', err);
+  }
+};
+
+const handleSubmitTest = async (testId: number, submissionText: string) => {
+  try {
+    await api.post(`/student/tests/${testId}/submit`, {
+      submissionText
+    });
+    alert('Test submitted successfully!');
+    fetchTestSubmission(testId);
+    fetchTests();
+  } catch (err) {
+    alert('Failed to submit test');
   }
 };
 
@@ -146,16 +236,26 @@ const fetchDashboardData = async () => {
     setLoading(true);
 
     // Only call the APIs you actually need
-    const [profileRes, timetableRes, attendanceRes] = await Promise.all([
+    const [profileRes, timetableRes, attendanceRes, testsRes, testResultsRes, marksRes] = await Promise.all([
       api.get('/student/profile'),
       api.get('/student/timetable/today'),
       api.get('/student/attendance'),
+      api.get('/student/tests'),
+      api.get('/student/test-results'),
+      api.get('/student/marks')
     ]);
 
     // Use optional chaining to prevent undefined errors
-    setProfile(profileRes?.data || null);
+    const profileData = profileRes?.data || null;
+    if (profileData && marksRes?.data?.cgpa !== undefined) {
+      profileData.cgpa = marksRes.data.cgpa;
+    }
+    setProfile(profileData);
     setTimetable(timetableRes?.data?.timetable || []);
     setAttendance(attendanceRes?.data || []);
+    setTests(testsRes?.data || []);
+    setTestResults(testResultsRes?.data || []);
+    setMarks(marksRes?.data?.marks || []);
 
     // Fetch notifications separately
     const notificationsRes = await api.get('/student/notifications');
@@ -184,8 +284,8 @@ const fetchDashboardData = async () => {
 
   const handleFeePayment = async (feeId: number) => {
     try {
-      // Mock payment functionality
-      alert('Payment processed successfully! (Mock)');
+      await api.post(`/student/fees/${feeId}/pay`);
+      alert('Fees submitted successfully!');
       fetchDashboardData();
     } catch (err) {
       alert('Payment failed');
@@ -277,6 +377,30 @@ const fetchDashboardData = async () => {
         >
           My Books
         </button>
+        <button
+          className={activeTab === 'tests' ? 'active' : ''}
+          onClick={() => setActiveTab('tests')}
+        >
+          Tests
+        </button>
+        <button
+          className={activeTab === 'test-results' ? 'active' : ''}
+          onClick={() => setActiveTab('test-results')}
+        >
+          Test Results
+        </button>
+        <button
+          className={activeTab === 'feedback' ? 'active' : ''}
+          onClick={() => setActiveTab('feedback')}
+        >
+          Feedback
+        </button>
+        <button
+          className={activeTab === 'my-feedback' ? 'active' : ''}
+          onClick={() => setActiveTab('my-feedback')}
+        >
+          My Feedback
+        </button>
 
       </div>
 
@@ -298,7 +422,7 @@ const fetchDashboardData = async () => {
               </div>
               <div className="stat-card">
                 <h3>Total Fees Due</h3>
-                <div className="stat-value">₹{fees.reduce((sum, fee) => sum + (fee.amount - fee.paidAmount), 0)}</div>
+                <div className="stat-value">₹{fees.filter(fee => fee.status === 'PENDING').reduce((sum, fee) => sum + fee.amount, 0)}</div>
               </div>
             </div>
 
@@ -560,20 +684,26 @@ const fetchDashboardData = async () => {
                 <div key={fee.id} className="fee-item">
                   <div className="fee-type">{fee.feeType}</div>
                   <div className="fee-amounts">
-                    <span>Total: ₹{fee.amount}</span>
-                    <span>Paid: ₹{fee.paidAmount}</span>
-                    <span>Balance: ₹{fee.amount - fee.paidAmount}</span>
+                    <span>Amount: ₹{fee.amount}</span>
+                    <span>Due Date: {new Date(fee.dueDate).toLocaleDateString()}</span>
+                    {fee.paidDate && <span>Paid Date: {new Date(fee.paidDate).toLocaleDateString()}</span>}
+                    {fee.transactionId && <span>Transaction ID: {fee.transactionId}</span>}
                   </div>
                   <div className="fee-status">
                     <span className={`status ${fee.status.toLowerCase()}`}>{fee.status}</span>
                   </div>
-                  {fee.amount > fee.paidAmount && (
+                  {fee.status === 'PENDING' && (
                     <button
                       className="pay-btn"
                       onClick={() => handleFeePayment(fee.id)}
                     >
-                      Pay Now
+                      Pay Fees
                     </button>
+                  )}
+                  {fee.status === 'PAID' && (
+                    <div className="payment-success">
+                      ✓ Fees submitted successfully
+                    </div>
                   )}
                 </div>
               ))}
@@ -601,10 +731,332 @@ const fetchDashboardData = async () => {
                   </div>
                 )}
 
+        {activeTab === 'tests' && (
+          <div className="tests-tab">
+            <div className="tests-header">
+              <h2>Available Tests</h2>
+            </div>
+            <div className="tests-list">
+              {tests.map((test) => (
+                <div key={test.id} className="test-item">
+                  <div className="test-header">
+                    <h3>{test.title}</h3>
+                    <span className="test-subject">{test.subject}</span>
+                  </div>
+                  <div className="test-details">
+                    <p>{test.description}</p>
+                    <div className="test-meta">
+                      <span>Date: {new Date(test.testDate).toLocaleDateString()}</span>
+                      <span>Time: {test.startTime} - {test.endTime}</span>
+                      <span>Max Marks: {test.maxMarks}</span>
+                      <span>Duration: {test.durationMinutes} minutes</span>
+                    </div>
+                    {test.instructions && (
+                      <div className="test-instructions">
+                        <h4>Instructions:</h4>
+                        <p>{test.instructions}</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="test-actions">
+                    <button 
+                      onClick={() => {
+                        setSelectedTest(test);
+                        fetchTestSubmission(test.id);
+                      }}
+                      className="view-test-btn"
+                    >
+                      {testSubmission ? 'View Submission' : 'Take Test'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {selectedTest && (
+              <div className="test-submission-section">
+                <h3>Test: {selectedTest.title}</h3>
+                {testSubmission ? (
+                  <div className="submission-status">
+                    <h4>Submission Status: {testSubmission.status}</h4>
+                    <p><strong>Submitted at:</strong> {new Date(testSubmission.submittedAt).toLocaleString()}</p>
+                    <p><strong>Your submission:</strong></p>
+                    <div className="submission-text">{testSubmission.submissionText}</div>
+                    {testSubmission.status === 'GRADED' && (
+                      <div className="graded-info">
+                        <h4>Results:</h4>
+                        <p><strong>Marks:</strong> {testSubmission.marksObtained}/{selectedTest.maxMarks}</p>
+                        <p><strong>Percentage:</strong> {Math.round((testSubmission.marksObtained / selectedTest.maxMarks) * 100)}%</p>
+                        <p><strong>Feedback:</strong> {testSubmission.feedback}</p>
+                        <p><strong>Graded by:</strong> {testSubmission.gradedBy}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="test-submission-form">
+                    <h4>Submit Your Test</h4>
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      const formData = new FormData(e.currentTarget);
+                      const submissionText = formData.get('submissionText') as string;
+                      if (submissionText.trim()) {
+                        handleSubmitTest(selectedTest.id, submissionText);
+                      }
+                    }}>
+                      <div className="form-group">
+                        <label>Your Answer:</label>
+                        <textarea
+                          name="submissionText"
+                          rows={10}
+                          placeholder="Enter your test submission here..."
+                          required
+                        />
+                      </div>
+                      <button type="submit" className="submit-test-btn">Submit Test</button>
+                    </form>
+                  </div>
+                )}
+                <button 
+                  onClick={() => {
+                    setSelectedTest(null);
+                    setTestSubmission(null);
+                  }}
+                  className="close-btn"
+                >
+                  Close
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'test-results' && (
+          <div className="test-results-tab">
+            <div className="test-results-header">
+              <h2>Test Results</h2>
+            </div>
+            <div className="test-results-list">
+              {testResults.length === 0 ? (
+                <p>No test results available yet.</p>
+              ) : (
+                testResults.map((result) => (
+                  <div key={result.testId} className="test-result-item">
+                    <div className="result-header">
+                      <h3>{result.testTitle}</h3>
+                      <span className="result-subject">{result.subject}</span>
+                    </div>
+                    <div className="result-details">
+                      <div className="result-marks">
+                        <span className="marks-obtained">{result.marksObtained}</span>
+                        <span className="marks-separator">/</span>
+                        <span className="marks-total">{result.maxMarks}</span>
+                        <span className="result-percentage">({result.percentage.toFixed(1)}%)</span>
+                      </div>
+                      <div className="result-feedback">
+                        <h4>Feedback:</h4>
+                        <p>{result.feedback}</p>
+                      </div>
+                      <div className="result-meta">
+                        <span>Graded by: {result.gradedBy}</span>
+                        <span>Graded at: {new Date(result.gradedAt).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'feedback' && (
+          <div className="feedback-tab">
+            <div className="feedback-header">
+              <h2>Submit Feedback</h2>
+              <p>Share your thoughts, suggestions, or report any issues</p>
+            </div>
+            <FeedbackForm />
+          </div>
+        )}
+
+        {activeTab === 'my-feedback' && (
+          <div className="my-feedback-tab">
+            <div className="my-feedback-header">
+              <h2>My Feedback</h2>
+              <p>View your submitted feedback and admin responses</p>
+            </div>
+            <MyFeedbackList />
+          </div>
+        )}
 
       </div>
     </div>
   );
 };
+
+function FeedbackForm() {
+  const [formData, setFormData] = useState({
+    title: '',
+    message: '',
+    category: 'GENERAL'
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const categories = [
+    { value: 'GENERAL', label: 'General' },
+    { value: 'ACADEMIC', label: 'Academic' },
+    { value: 'FACILITY', label: 'Facility' },
+    { value: 'TECHNICAL', label: 'Technical' }
+  ];
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!formData.title.trim() || !formData.message.trim()) {
+      setMessage('Please fill in all required fields');
+      return;
+    }
+
+    setSubmitting(true);
+    setMessage('');
+
+    try {
+      await api.post('/student/feedback', formData);
+      setMessage('Feedback submitted successfully!');
+      setFormData({ title: '', message: '', category: 'GENERAL' });
+    } catch (err) {
+      setMessage('Failed to submit feedback');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  return (
+    <div className="feedback-form-container">
+      <form onSubmit={handleSubmit} className="feedback-form">
+        <div className="form-group">
+          <label htmlFor="title">Title *</label>
+          <input
+            type="text"
+            id="title"
+            name="title"
+            value={formData.title}
+            onChange={handleChange}
+            placeholder="Brief description of your feedback"
+            required
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="category">Category *</label>
+          <select
+            id="category"
+            name="category"
+            value={formData.category}
+            onChange={handleChange}
+            required
+          >
+            {categories.map(cat => (
+              <option key={cat.value} value={cat.value}>
+                {cat.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="message">Message *</label>
+          <textarea
+            id="message"
+            name="message"
+            value={formData.message}
+            onChange={handleChange}
+            placeholder="Please provide detailed feedback..."
+            rows={6}
+            required
+          />
+        </div>
+
+        <button 
+          type="submit" 
+          disabled={submitting}
+          className="submit-btn"
+        >
+          {submitting ? 'Submitting...' : 'Submit Feedback'}
+        </button>
+
+        {message && (
+          <div className={`message ${message.includes('successfully') ? 'success' : 'error'}`}>
+            {message}
+          </div>
+        )}
+      </form>
+    </div>
+  );
+}
+
+function MyFeedbackList() {
+  const [feedback, setFeedback] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchMyFeedback();
+  }, []);
+
+  const fetchMyFeedback = async () => {
+    try {
+      const res = await api.get('/student/my-feedback');
+      setFeedback(res.data);
+    } catch (err) {
+      console.error('Failed to fetch feedback:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="loading">Loading your feedback...</div>;
+
+  return (
+    <div className="my-feedback-list">
+      {feedback.length === 0 ? (
+        <p>You haven't submitted any feedback yet.</p>
+      ) : (
+        feedback.map((item) => (
+          <div key={item.id} className="feedback-item">
+            <div className="feedback-header">
+              <h3>{item.title}</h3>
+              <span className={`feedback-status ${item.status.toLowerCase()}`}>
+                {item.status}
+              </span>
+            </div>
+            <div className="feedback-category">{item.category}</div>
+            <p className="feedback-message">{item.message}</p>
+            <div className="feedback-date">
+              Submitted: {new Date(item.createdAt).toLocaleDateString()}
+            </div>
+            
+            {item.adminResponse && (
+              <div className="admin-response">
+                <h4>Admin Response:</h4>
+                <p>{item.adminResponse}</p>
+                <small>
+                  By: {item.respondedBy} on {new Date(item.respondedAt).toLocaleDateString()}
+                </small>
+              </div>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
 
 export default StudentDashboard;

@@ -46,6 +46,37 @@ interface Notification {
   createdBy: string;
 }
 
+interface Test {
+  id: number;
+  title: string;
+  description: string;
+  subject: string;
+  maxMarks: number;
+  testDate: string;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  instructions: string;
+  createdBy: string;
+  semester: string;
+  academicYear: string;
+  status: string;
+  isActive: boolean;
+}
+
+interface TestSubmission {
+  id: number;
+  testId: number;
+  studentId: number;
+  submissionText: string;
+  submittedAt: string;
+  marksObtained: number;
+  feedback: string;
+  gradedBy: string;
+  gradedAt: string;
+  status: string;
+}
+
 
 const FacultyDashboard: React.FC = () => {
   const { user, logout } = useAuth();
@@ -55,6 +86,9 @@ const FacultyDashboard: React.FC = () => {
   const [students, setStudents] = useState<{ studentId: number; name: string }[]>([]);
   const [profile, setProfile] = useState<FacultyProfile | null>(null);
   const [notifications, setNotifications] = useState([]);
+  const [tests, setTests] = useState<Test[]>([]);
+  const [testSubmissions, setTestSubmissions] = useState<TestSubmission[]>([]);
+  const [selectedTest, setSelectedTest] = useState<Test | null>(null);
 
 // Add this at the top, with other useState hooks
 const [newNotification, setNewNotification] = useState({
@@ -63,8 +97,46 @@ const [newNotification, setNewNotification] = useState({
   targetRole: 'STUDENT'
 });
 
+const [newTest, setNewTest] = useState({
+  title: '',
+  description: '',
+  subject: '',
+  maxMarks: '',
+  testDate: '',
+  startTime: '',
+  endTime: '',
+  durationMinutes: '',
+  instructions: '',
+  semester: '',
+  academicYear: ''
+});
+
 
   const [timetable, setTimetable] = useState<TimetableEntry[] | null>(null);
+  const [subjects, setSubjects] = useState([
+    { id: 1, subjectName: 'Operating Systems' },
+    { id: 2, subjectName: 'Computer Networks' },
+    { id: 3, subjectName: 'Data Structures' },
+    { id: 4, subjectName: 'Database Management' },
+    { id: 5, subjectName: 'Software Engineering' }
+  ]);
+  const [marks, setMarks] = useState([]);
+  const [newAssignment, setNewAssignment] = useState({
+    title: '',
+    description: '',
+    subject: '',
+    maxMarks: '',
+    dueDate: ''
+  });
+  const [newMark, setNewMark] = useState({
+    studentId: '',
+    subject: '',
+    examType: '',
+    marksObtained: '',
+    maxMarks: '',
+    semester: '',
+    academicYear: ''
+  });
 
    const [assignments, setAssignments] = useState([
      {
@@ -96,15 +168,18 @@ const [newNotification, setNewNotification] = useState({
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const [ studentsRes, notificationsRes] = await Promise.all([
-
+      const [ studentsRes, notificationsRes, myNotificationsRes, testsRes, marksRes] = await Promise.all([
         api.get('/faculty/students'),
-        api.get('/faculty/notifications')
+        api.get('/faculty/notifications'),
+        api.get('/faculty/my-notifications'),
+        api.get('/faculty/tests'),
+        api.get('/faculty/marks')
       ]);
 
-
       setStudents(studentsRes.data || []);
-      setNotifications(notificationsRes.data || []);
+      setNotifications(myNotificationsRes.data || []); // Use my-notifications for existing notifications
+      setTests(testsRes.data || []);
+      setMarks(marksRes.data || []);
 
     } catch (err) {
       setError('Failed to fetch dashboard data');
@@ -168,6 +243,126 @@ const handleDeleteNotification = async (id: number) => {
     fetchDashboardData();
   } catch (err) {
     alert("Failed to delete notification");
+  }
+};
+
+// Test Management Functions
+const handleCreateTest = async (e: React.FormEvent) => {
+  e.preventDefault();
+  try {
+    await api.post('/faculty/tests', {
+      ...newTest,
+      maxMarks: parseInt(newTest.maxMarks),
+      durationMinutes: parseInt(newTest.durationMinutes)
+    });
+    alert('Test created successfully!');
+    setNewTest({
+      title: '',
+      description: '',
+      subject: '',
+      maxMarks: '',
+      testDate: '',
+      startTime: '',
+      endTime: '',
+      durationMinutes: '',
+      instructions: '',
+      semester: '',
+      academicYear: ''
+    });
+    fetchTests();
+  } catch (err) {
+    alert('Failed to create test');
+  }
+};
+
+const fetchTests = async () => {
+  try {
+    const res = await api.get('/faculty/tests');
+    setTests(res.data || []);
+  } catch (err) {
+    console.error('Error fetching tests:', err);
+  }
+};
+
+const fetchTestSubmissions = async (testId: number) => {
+  try {
+    const res = await api.get(`/faculty/tests/${testId}/submissions`);
+    setTestSubmissions(res.data || []);
+  } catch (err) {
+    console.error('Error fetching test submissions:', err);
+  }
+};
+
+const handleGradeSubmission = async (submissionId: number, marksObtained: number, feedback: string) => {
+  try {
+    await api.post(`/faculty/tests/${selectedTest?.id}/submissions/${submissionId}/grade`, {
+      marksObtained,
+      feedback
+    });
+    alert('Submission graded successfully!');
+    if (selectedTest) {
+      fetchTestSubmissions(selectedTest.id);
+    }
+  } catch (err) {
+    alert('Failed to grade submission');
+  }
+};
+
+const handleDeleteTest = async (testId: number) => {
+  if (!window.confirm("Are you sure you want to delete this test?")) return;
+
+  try {
+    await api.delete(`/faculty/tests/${testId}`);
+    alert("Test deleted successfully");
+    fetchTests();
+  } catch (err) {
+    alert("Failed to delete test");
+  }
+};
+
+const handleAddMark = async (e: React.FormEvent) => {
+  e.preventDefault();
+  
+  // Client-side validation
+  const marksObtained = parseInt(newMark.marksObtained);
+  const maxMarks = parseInt(newMark.maxMarks);
+  
+  if (marksObtained < 0 || marksObtained > 100) {
+    alert('Marks obtained must be between 0 and 100');
+    return;
+  }
+  
+  if (maxMarks < 0 || maxMarks > 100) {
+    alert('Max marks must be between 0 and 100');
+    return;
+  }
+  
+  if (marksObtained > maxMarks) {
+    alert('Marks obtained cannot be greater than max marks');
+    return;
+  }
+  
+  try {
+    await api.post('/faculty/marks', {
+      ...newMark,
+      marksObtained: marksObtained,
+      maxMarks: maxMarks
+    });
+    alert('Mark added successfully!');
+    setNewMark({
+      studentId: '',
+      subject: '',
+      examType: '',
+      marksObtained: '',
+      maxMarks: '',
+      semester: '',
+      academicYear: ''
+    });
+    fetchDashboardData();
+  } catch (err: any) {
+    console.error('Error adding mark:', err);
+    const errorMessage = err.response?.data?.error || err.message || 'Failed to add mark';
+    alert(`Failed to add mark: ${errorMessage}`);
   }
 };
 
@@ -269,6 +464,12 @@ const handleDeleteNotification = async (id: number) => {
           onClick={() => setActiveTab('notifications')}
         >
           Notifications
+        </button>
+        <button 
+          className={activeTab === 'tests' ? 'active' : ''} 
+          onClick={() => setActiveTab('tests')}
+        >
+          Tests
         </button>
       </div>
 <div className="dashboard-content">
@@ -478,13 +679,19 @@ const handleDeleteNotification = async (id: number) => {
                 <h3>Add New Mark</h3>
                 <form onSubmit={handleAddMark} className="marks-form">
                   <div className="form-group">
-                    <label>Student ID:</label>
-                    <input
-                      type="number"
+                    <label>Select Student:</label>
+                    <select
                       value={newMark.studentId}
                       onChange={(e) => setNewMark({...newMark, studentId: e.target.value})}
                       required
-                    />
+                    >
+                      <option value="">Select a Student</option>
+                      {students.map((student) => (
+                        <option key={student.studentId} value={student.studentId}>
+                          {student.name} (ID: {student.studentId})
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="form-group">
                     <label>Subject:</label>
@@ -508,10 +715,12 @@ const handleDeleteNotification = async (id: number) => {
                       onChange={(e) => setNewMark({...newMark, examType: e.target.value})}
                       required
                     >
+                      <option value="">Select Exam Type</option>
+                      <option value="QUIZ">Quiz</option>
                       <option value="MIDTERM">Midterm</option>
                       <option value="FINAL">Final</option>
-                      <option value="QUIZ">Quiz</option>
                       <option value="ASSIGNMENT">Assignment</option>
+                      <option value="PROJECT">Project</option>
                     </select>
                   </div>
                   <div className="form-group">
@@ -520,6 +729,8 @@ const handleDeleteNotification = async (id: number) => {
                       type="number"
                       value={newMark.marksObtained}
                       onChange={(e) => setNewMark({...newMark, marksObtained: e.target.value})}
+                      min="0"
+                      max="100"
                       required
                     />
                   </div>
@@ -529,6 +740,8 @@ const handleDeleteNotification = async (id: number) => {
                       type="number"
                       value={newMark.maxMarks}
                       onChange={(e) => setNewMark({...newMark, maxMarks: e.target.value})}
+                      min="0"
+                      max="100"
                       required
                     />
                   </div>
@@ -637,6 +850,220 @@ const handleDeleteNotification = async (id: number) => {
           </div>
         )}
 
+        {activeTab === 'tests' && (
+          <div className="tests-tab">
+            <div className="tests-header">
+              <h2>Test Management</h2>
+            </div>
+            
+            <div className="test-forms">
+              <div className="form-section">
+                <h3>Create New Test</h3>
+                <form onSubmit={handleCreateTest} className="test-form">
+                  <div className="form-group">
+                    <label>Title:</label>
+                    <input
+                      type="text"
+                      value={newTest.title}
+                      onChange={(e) => setNewTest({...newTest, title: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Description:</label>
+                    <textarea
+                      value={newTest.description}
+                      onChange={(e) => setNewTest({...newTest, description: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Subject:</label>
+                    <input
+                      type="text"
+                      value={newTest.subject}
+                      onChange={(e) => setNewTest({...newTest, subject: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Max Marks:</label>
+                    <input
+                      type="number"
+                      value={newTest.maxMarks}
+                      onChange={(e) => setNewTest({...newTest, maxMarks: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Test Date:</label>
+                    <input
+                      type="date"
+                      value={newTest.testDate}
+                      onChange={(e) => setNewTest({...newTest, testDate: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Start Time:</label>
+                    <input
+                      type="time"
+                      value={newTest.startTime}
+                      onChange={(e) => setNewTest({...newTest, startTime: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>End Time:</label>
+                    <input
+                      type="time"
+                      value={newTest.endTime}
+                      onChange={(e) => setNewTest({...newTest, endTime: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Duration (minutes):</label>
+                    <input
+                      type="number"
+                      value={newTest.durationMinutes}
+                      onChange={(e) => setNewTest({...newTest, durationMinutes: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Instructions:</label>
+                    <textarea
+                      value={newTest.instructions}
+                      onChange={(e) => setNewTest({...newTest, instructions: e.target.value})}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Semester:</label>
+                    <input
+                      type="text"
+                      value={newTest.semester}
+                      onChange={(e) => setNewTest({...newTest, semester: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Academic Year:</label>
+                    <input
+                      type="text"
+                      value={newTest.academicYear}
+                      onChange={(e) => setNewTest({...newTest, academicYear: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <button type="submit" className="submit-btn">Create Test</button>
+                </form>
+              </div>
+            </div>
+
+            <div className="tests-list">
+              <h3>Existing Tests</h3>
+              {tests.map((test) => (
+                <div key={test.id} className="test-item">
+                  <div className="test-header">
+                    <h4>{test.title}</h4>
+                    <span className="test-subject">{test.subject}</span>
+                  </div>
+                  <div className="test-details">
+                    <p>{test.description}</p>
+                    <div className="test-meta">
+                      <span>Date: {new Date(test.testDate).toLocaleDateString()}</span>
+                      <span>Time: {test.startTime} - {test.endTime}</span>
+                      <span>Max Marks: {test.maxMarks}</span>
+                      <span>Duration: {test.durationMinutes} minutes</span>
+                    </div>
+                  </div>
+                  <div className="test-actions">
+                    <button 
+                      onClick={() => {
+                        setSelectedTest(test);
+                        fetchTestSubmissions(test.id);
+                      }}
+                      className="view-submissions-btn"
+                    >
+                      View Submissions
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteTest(test.id)}
+                      className="delete-btn"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {selectedTest && (
+              <div className="test-submissions-section">
+                <h3>Submissions for: {selectedTest.title}</h3>
+                <div className="submissions-list">
+                  {testSubmissions.map((submission) => (
+                    <div key={submission.id} className="submission-item">
+                      <div className="submission-header">
+                        <h4>Student ID: {submission.studentId}</h4>
+                        <span className={`submission-status ${submission.status.toLowerCase()}`}>
+                          {submission.status}
+                        </span>
+                      </div>
+                      <div className="submission-content">
+                        <p><strong>Submission:</strong></p>
+                        <p>{submission.submissionText}</p>
+                        <p><strong>Submitted at:</strong> {new Date(submission.submittedAt).toLocaleString()}</p>
+                        {submission.status === 'GRADED' && (
+                          <div className="graded-info">
+                            <p><strong>Marks:</strong> {submission.marksObtained}/{selectedTest.maxMarks}</p>
+                            <p><strong>Feedback:</strong> {submission.feedback}</p>
+                            <p><strong>Graded by:</strong> {submission.gradedBy}</p>
+                          </div>
+                        )}
+                      </div>
+                      {submission.status === 'SUBMITTED' && (
+                        <div className="grading-form">
+                          <h5>Grade Submission:</h5>
+                          <form onSubmit={(e) => {
+                            e.preventDefault();
+                            const formData = new FormData(e.currentTarget);
+                            const marks = parseInt(formData.get('marks') as string);
+                            const feedback = formData.get('feedback') as string;
+                            handleGradeSubmission(submission.id, marks, feedback);
+                          }}>
+                            <div className="form-group">
+                              <label>Marks:</label>
+                              <input
+                                type="number"
+                                name="marks"
+                                min="0"
+                                max={selectedTest.maxMarks}
+                                required
+                              />
+                            </div>
+                            <div className="form-group">
+                              <label>Feedback:</label>
+                              <textarea name="feedback" required></textarea>
+                            </div>
+                            <button type="submit" className="grade-btn">Grade</button>
+                          </form>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button 
+                  onClick={() => setSelectedTest(null)}
+                  className="close-btn"
+                >
+                  Close
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
     </div>
   );

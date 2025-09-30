@@ -29,9 +29,11 @@ export default function AdminDashboard() {
 		</div>
 	)
 
-	const tabs = [
+    const tabs = [
         { id: 'overview', label: 'Overview', icon: '📊' },
         { id: 'users', label: 'User Management', icon: '👥' },
+        { id: 'marks', label: 'Marks Management', icon: '📝' },
+        { id: 'attendance', label: 'Attendance Management', icon: '📋' },
         { id: 'reports', label: 'Reports', icon: '📈' },
         { id: 'feedback', label: 'Feedback', icon: '💬' },
         { id: 'notifications', label: 'Notifications', icon: '🔔' },
@@ -107,6 +109,8 @@ export default function AdminDashboard() {
 				)}
 
 				{activeTab === 'users' && <UserManagement />}
+				{activeTab === 'marks' && <MarksManagement />}
+				{activeTab === 'attendance' && <AttendanceManagement />}
 				{activeTab === 'reports' && <ReportsManagement />}
 				{activeTab === 'feedback' && <FeedbackManagement />}
 				{activeTab === 'notifications' && <NotificationManagement />}
@@ -739,6 +743,246 @@ function NotificationManagement() {
     </div>
   )
 }
+function MarksManagement() {
+	const [students, setStudents] = useState<any[]>([])
+	const [marks, setMarks] = useState<any[]>([])
+	const [loading, setLoading] = useState(true)
+	const [submitting, setSubmitting] = useState(false)
+	const [message, setMessage] = useState('')
+	const [selectedSubject, setSelectedSubject] = useState('')
+	const [selectedExamType, setSelectedExamType] = useState('')
+	const [selectedSemester, setSelectedSemester] = useState('')
+	const [selectedAcademicYear, setSelectedAcademicYear] = useState('')
+	const [studentMarks, setStudentMarks] = useState<{[key: number]: {marksObtained: string, maxMarks: string}}>({})
+
+	const subjects = [
+		'Operating Systems',
+		'Computer Networks', 
+		'Data Structures',
+		'Database Management',
+		'Software Engineering'
+	]
+
+	const examTypes = ['QUIZ', 'MIDTERM', 'FINAL', 'ASSIGNMENT', 'PROJECT']
+	const semesters = ['1', '2', '3', '4', '5', '6', '7', '8']
+	const academicYears = ['2023-24', '2024-25', '2025-26']
+
+	useEffect(() => {
+		fetchStudents()
+		fetchMarks()
+	}, [])
+
+	const fetchStudents = async () => {
+		try {
+			const res = await api.get('/admin/students')
+			setStudents(res.data)
+		} catch (err) {
+			console.error('Failed to fetch students:', err)
+		} finally {
+			setLoading(false)
+		}
+	}
+
+	const fetchMarks = async () => {
+		try {
+			const res = await api.get('/admin/marks')
+			setMarks(res.data)
+		} catch (err) {
+			console.error('Failed to fetch marks:', err)
+		}
+	}
+
+	const handleMarksChange = (studentId: number, field: 'marksObtained' | 'maxMarks', value: string) => {
+		setStudentMarks(prev => ({
+			...prev,
+			[studentId]: {
+				...prev[studentId],
+				[field]: value
+			}
+		}))
+	}
+
+	const handleSubmitMarks = async () => {
+		if (!selectedSubject || !selectedExamType || !selectedSemester || !selectedAcademicYear) {
+			setMessage('Please fill all required fields')
+			return
+		}
+
+		const marksToSubmit = Object.entries(studentMarks)
+			.filter(([_, marks]) => marks.marksObtained && marks.maxMarks)
+			.map(([studentId, marks]) => ({
+				studentId: parseInt(studentId),
+				subject: selectedSubject,
+				examType: selectedExamType,
+				marksObtained: parseInt(marks.marksObtained),
+				maxMarks: parseInt(marks.maxMarks),
+				semester: selectedSemester,
+				academicYear: selectedAcademicYear
+			}))
+
+		if (marksToSubmit.length === 0) {
+			setMessage('Please enter marks for at least one student')
+			return
+		}
+
+		setSubmitting(true)
+		setMessage('')
+
+		try {
+			await api.post('/admin/marks/bulk', marksToSubmit)
+			setMessage('Marks submitted successfully!')
+			setStudentMarks({})
+			setSelectedSubject('')
+			setSelectedExamType('')
+			setSelectedSemester('')
+			setSelectedAcademicYear('')
+			fetchMarks()
+		} catch (err) {
+			setMessage('Failed to submit marks')
+		} finally {
+			setSubmitting(false)
+		}
+	}
+
+	if (loading) return <div className="loading">Loading students...</div>
+
+	return (
+		<div className="tab-content">
+			<h2>Marks Management</h2>
+			
+			<div className="marks-form-section">
+				<h3>Add Marks for Students</h3>
+				<div className="marks-form-filters">
+					<div className="form-group">
+						<label>Subject</label>
+						<select
+							value={selectedSubject}
+							onChange={(e) => setSelectedSubject(e.target.value)}
+							required
+						>
+							<option value="">Select Subject</option>
+							{subjects.map(subject => (
+								<option key={subject} value={subject}>{subject}</option>
+							))}
+						</select>
+					</div>
+					<div className="form-group">
+						<label>Exam Type</label>
+						<select
+							value={selectedExamType}
+							onChange={(e) => setSelectedExamType(e.target.value)}
+							required
+						>
+							<option value="">Select Exam Type</option>
+							{examTypes.map(type => (
+								<option key={type} value={type}>{type}</option>
+							))}
+						</select>
+					</div>
+					<div className="form-group">
+						<label>Semester</label>
+						<select
+							value={selectedSemester}
+							onChange={(e) => setSelectedSemester(e.target.value)}
+							required
+						>
+							<option value="">Select Semester</option>
+							{semesters.map(sem => (
+								<option key={sem} value={sem}>Semester {sem}</option>
+							))}
+						</select>
+					</div>
+					<div className="form-group">
+						<label>Academic Year</label>
+						<select
+							value={selectedAcademicYear}
+							onChange={(e) => setSelectedAcademicYear(e.target.value)}
+							required
+						>
+							<option value="">Select Academic Year</option>
+							{academicYears.map(year => (
+								<option key={year} value={year}>{year}</option>
+							))}
+						</select>
+					</div>
+				</div>
+
+				<div className="students-marks-table">
+					<h4>Enter Marks for Students</h4>
+					<table className="marks-table">
+						<thead>
+							<tr>
+								<th>Student ID</th>
+								<th>Name</th>
+								<th>Roll Number</th>
+								<th>Marks Obtained</th>
+								<th>Max Marks</th>
+							</tr>
+						</thead>
+						<tbody>
+							{students.map((student) => (
+								<tr key={student.id}>
+									<td>{student.id}</td>
+									<td>{student.name}</td>
+									<td>{student.rollNumber}</td>
+									<td>
+										<input
+											type="number"
+											value={studentMarks[student.id]?.marksObtained || ''}
+											onChange={(e) => handleMarksChange(student.id, 'marksObtained', e.target.value)}
+											placeholder="Marks"
+											min="0"
+											max="100"
+										/>
+									</td>
+									<td>
+										<input
+											type="number"
+											value={studentMarks[student.id]?.maxMarks || ''}
+											onChange={(e) => handleMarksChange(student.id, 'maxMarks', e.target.value)}
+											placeholder="Max Marks"
+											min="1"
+											max="100"
+										/>
+									</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</div>
+
+				<button 
+					onClick={handleSubmitMarks}
+					disabled={submitting}
+					className="submit-button"
+				>
+					{submitting ? 'Submitting...' : 'Submit Marks'}
+				</button>
+				{message && <div className="message">{message}</div>}
+			</div>
+
+			<div className="existing-marks-section">
+				<h3>Existing Marks</h3>
+				<div className="marks-list">
+					{marks.map((mark, index) => (
+						<div key={index} className="mark-card">
+							<div className="mark-header">
+								<span className="mark-student">{mark.studentName}</span>
+								<span className="mark-subject">{mark.subject}</span>
+							</div>
+							<div className="mark-details">
+								<span className="mark-exam">{mark.examType}</span>
+								<span className="mark-score">{mark.marksObtained}/{mark.maxMarks}</span>
+								<span className="mark-semester">Sem {mark.semester}</span>
+							</div>
+						</div>
+					))}
+				</div>
+			</div>
+		</div>
+	)
+}
+
 function AnalyticsManagement() {
 	const [analytics, setAnalytics] = useState<any>({})
 	const [loading, setLoading] = useState(true)
@@ -799,6 +1043,155 @@ function AnalyticsManagement() {
 						<span className="metric-label">Total Faculty:</span>
 						<span className="metric-value">{analytics.totalFaculty || 0}</span>
 					</div>
+				</div>
+			</div>
+		</div>
+	)
+}
+
+function AttendanceManagement() {
+	const [students, setStudents] = useState<any[]>([])
+	const [loading, setLoading] = useState(true)
+	const [submitting, setSubmitting] = useState(false)
+	const [message, setMessage] = useState('')
+	const [selectedStudent, setSelectedStudent] = useState('')
+	const [selectedSubject, setSelectedSubject] = useState('')
+	const [selectedStatus, setSelectedStatus] = useState('')
+	const [selectedDate, setSelectedDate] = useState('')
+
+	const subjects = [
+		'Operating Systems',
+		'Computer Networks', 
+		'Data Structures',
+		'Database Management',
+		'Software Engineering'
+	]
+
+	const attendanceStatuses = ['PRESENT', 'ABSENT', 'LATE', 'EXCUSED']
+
+	useEffect(() => {
+		fetchStudents()
+	}, [])
+
+	const fetchStudents = async () => {
+		try {
+			const res = await api.get('/admin/students')
+			setStudents(res.data)
+		} catch (err) {
+			console.error('Failed to fetch students:', err)
+		} finally {
+			setLoading(false)
+		}
+	}
+
+	const handleSubmitAttendance = async () => {
+		if (!selectedStudent || !selectedSubject || !selectedStatus || !selectedDate) {
+			setMessage('Please fill all required fields')
+			return
+		}
+
+		setSubmitting(true)
+		setMessage('')
+
+		try {
+			const attendanceData = {
+				studentId: parseInt(selectedStudent),
+				subject: selectedSubject,
+				status: selectedStatus,
+				date: selectedDate
+			}
+
+			await api.post('/admin/attendance', attendanceData)
+			setMessage('Attendance marked successfully!')
+			
+			// Reset form
+			setSelectedStudent('')
+			setSelectedSubject('')
+			setSelectedStatus('')
+			setSelectedDate('')
+		} catch (err) {
+			setMessage('Failed to mark attendance')
+		} finally {
+			setSubmitting(false)
+		}
+	}
+
+	if (loading) return <div className="loading">Loading students...</div>
+
+	return (
+		<div className="tab-content">
+			<h2>Attendance Management</h2>
+			
+			<div className="attendance-form-section">
+				<h3>Mark Student Attendance</h3>
+				<div className="attendance-form">
+					<div className="form-group">
+						<label>Select Student</label>
+						<select
+							value={selectedStudent}
+							onChange={(e) => setSelectedStudent(e.target.value)}
+							required
+						>
+							<option value="">Select Student</option>
+							{students.map(student => (
+								<option key={student.id} value={student.id}>
+									{student.name} (ID: {student.id}) - {student.rollNumber}
+								</option>
+							))}
+						</select>
+					</div>
+					
+					<div className="form-group">
+						<label>Subject</label>
+						<select
+							value={selectedSubject}
+							onChange={(e) => setSelectedSubject(e.target.value)}
+							required
+						>
+							<option value="">Select Subject</option>
+							{subjects.map(subject => (
+								<option key={subject} value={subject}>{subject}</option>
+							))}
+						</select>
+					</div>
+					
+					<div className="form-group">
+						<label>Attendance Status</label>
+						<select
+							value={selectedStatus}
+							onChange={(e) => setSelectedStatus(e.target.value)}
+							required
+						>
+							<option value="">Select Status</option>
+							{attendanceStatuses.map(status => (
+								<option key={status} value={status}>{status}</option>
+							))}
+						</select>
+					</div>
+					
+					<div className="form-group">
+						<label>Date</label>
+						<input
+							type="date"
+							value={selectedDate}
+							onChange={(e) => setSelectedDate(e.target.value)}
+							required
+						/>
+					</div>
+					
+					<button 
+						onClick={handleSubmitAttendance}
+						disabled={submitting}
+						className="btn btn-primary"
+					>
+						{submitting ? 'Marking...' : 'Mark Attendance'}
+					</button>
+					
+					{message && (
+						<div className={`message ${message.includes('successfully') ? 'success' : 'error'}`}>
+							{message}
+						</div>
+					)}
 				</div>
 			</div>
 		</div>

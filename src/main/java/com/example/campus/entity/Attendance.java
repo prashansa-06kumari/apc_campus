@@ -16,6 +16,9 @@ public class Attendance {
     @Column(name = "student_id", nullable = false)
     private Long studentId;
 
+    @Column(name = "student_name")
+    private String studentName;
+
     @NotNull
     @Column(name = "subject", nullable = false)
     private String subject;
@@ -59,6 +62,9 @@ public class Attendance {
 
     public Long getStudentId() { return studentId; }
     public void setStudentId(Long studentId) { this.studentId = studentId; }
+
+    public String getStudentName() { return studentName; }
+    public void setStudentName(String studentName) { this.studentName = studentName; }
 
     public String getSubject() { return subject; }
     public void setSubject(String subject) { this.subject = subject; }
