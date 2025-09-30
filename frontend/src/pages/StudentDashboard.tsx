@@ -8,17 +8,10 @@ import './Dashboard.css';
 interface StudentProfile {
   id: number;
   name: string;
-  rollNumber: string;
-  department: string;
-  email: string;
-  phone: string;
-  address: string;
-  cgpa: number;
-  sgpaSem1: number;
-  sgpaSem2: number;
-  sgpaSem3: number;
-  academicYear: string;
-  semester: string;
+  username: string;
+  role: string;
+  studentId: string;
+
 }
 
 interface TimetableEntry {
@@ -100,6 +93,15 @@ const StudentDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 const [issuedBooks, setIssuedBooks] = useState<IssuedBook[]>([]);
+
+
+useEffect(() => {
+  if (user) {
+    api.get('/student/profile')
+      .then(res => setProfile(res.data))
+      .catch(err => console.error(err));
+  }
+}, [user]);
 
 
 useEffect(() => {
@@ -213,7 +215,8 @@ const fetchDashboardData = async () => {
       <div className="dashboard-header">
         <h1>Student Dashboard</h1>
         <div className="user-info">
-          <span>Welcome, {profile?.name || user?.username}</span>
+          <span>Welcome, {profile?.name || user?.username || 'Student'}</span>
+
           <button onClick={logout} className="logout-btn">Logout</button>
         </div>
       </div>

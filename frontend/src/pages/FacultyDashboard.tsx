@@ -86,20 +86,23 @@ const [newNotification, setNewNotification] = useState({
    ]);
 
 
+
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
+
+
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const [profileRes, studentsRes, notificationsRes] = await Promise.all([
-        api.get('/faculty/profile'),
+      const [ studentsRes, notificationsRes] = await Promise.all([
+
         api.get('/faculty/students'),
         api.get('/faculty/notifications')
       ]);
 
-      setProfile(profileRes.data);
+
       setStudents(studentsRes.data || []);
       setNotifications(notificationsRes.data || []);
 
@@ -224,8 +227,7 @@ const handleDeleteNotification = async (id: number) => {
       <div className="dashboard-header">
         <h1>Faculty Dashboard</h1>
         <div className="user-info">
-          <span>Welcome, {profile?.name || user?.username}</span>
-
+          <span>Welcome, {profile?.name ? `Dr. ${profile.name}` : user?.username}</span>
 
           <button onClick={logout} className="logout-btn">Logout</button>
         </div>

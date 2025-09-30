@@ -272,41 +272,30 @@ public class StudentController {
 
         return ResponseEntity.ok(response);
     }
-
+    // 1️⃣ Get student profile
     @GetMapping("/profile")
     public ResponseEntity<?> getProfile(@AuthenticationPrincipal UserDetails userDetails) {
-        try {
-            User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
-            if (user == null) {
-                return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
-            }
-
-            // Try to find student profile, if not found create mock data
-            Student student = studentRepository.findByEmail(user.getUsername()).orElse(null);
-            if (student == null) {
-                // Create mock student profile
-                Map<String, Object> mockProfile = new HashMap<>();
-                mockProfile.put("id", user.getId());
-                mockProfile.put("name", "John Doe");
-                mockProfile.put("rollNumber", "CS2023001");
-                mockProfile.put("department", "Computer Science");
-                mockProfile.put("email", user.getUsername());
-                mockProfile.put("phone", "+91 9876543210");
-                mockProfile.put("address", "123 Main Street, City, State");
-                mockProfile.put("cgpa", 8.5);
-                mockProfile.put("sgpaSem1", 8.0);
-                mockProfile.put("sgpaSem2", 8.3);
-                mockProfile.put("sgpaSem3", 8.7);
-                mockProfile.put("academicYear", "2023-24");
-                mockProfile.put("semester", "6th Semester");
-                return ResponseEntity.ok(mockProfile);
-            }
-
-            return ResponseEntity.ok(student);
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        if (userDetails == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
         }
+
+        User user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
+        if (user == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+        }
+
+        Map<String, Object> profile = new HashMap<>();
+        profile.put("id", user.getId());
+        profile.put("name", user.getName());
+        profile.put("username", user.getUsername());
+        profile.put("role", user.getRole());
+        profile.put("studentId", user.getStudentId());
+        // Optional: add more fields if needed
+        // profile.put("cgpa", user.getCgpa());
+
+        return ResponseEntity.ok(profile);
     }
+
 
     @GetMapping("/timetable/today")
     public ResponseEntity<?> getTodayTimetable(@AuthenticationPrincipal UserDetails userDetails) {

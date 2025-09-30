@@ -61,15 +61,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       const response = await api.post('/auth/login', { username, password });
       const { token, role } = response.data;
-      
+
       localStorage.setItem('token', token);
       localStorage.setItem('role', role);
-      
-      setUser({ id: 0, username, role }); // ID will be updated when /me is called
+
+      // Fetch full profile for student
+      if (role === 'STUDENT') {
+        const profileRes = await api.get('/student/profile');
+        const profileData = profileRes.data;
+        setUser({
+          id: profileData.id,
+          username: profileData.username,
+          role: profileData.role
+        });
+      } else {
+        setUser({ id: 0, username, role });
+      }
     } catch (error) {
       throw error;
     }
   };
+
 
   const signup = async (username: string, password: string, role: string) => {
     try {
