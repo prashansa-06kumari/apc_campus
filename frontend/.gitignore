@@ -1,0 +1,2 @@
+# Compiled JS must not live beside TS/TSX sources (Vite resolves .js first)
+src/**/*.js

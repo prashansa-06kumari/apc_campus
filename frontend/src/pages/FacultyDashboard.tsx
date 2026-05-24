@@ -64,6 +64,17 @@ interface Test {
   isActive: boolean;
 }
 
+interface FacultyMark {
+  id: number;
+  studentId: number;
+  subject: string;
+  examType: string;
+  marksObtained: number;
+  maxMarks: number;
+  semester: string;
+  academicYear: string;
+}
+
 interface TestSubmission {
   id: number;
   testId: number;
@@ -120,7 +131,7 @@ const [newTest, setNewTest] = useState({
     { id: 4, subjectName: 'Database Management' },
     { id: 5, subjectName: 'Software Engineering' }
   ]);
-  const [marks, setMarks] = useState([]);
+  const [marks, setMarks] = useState<FacultyMark[]>([]);
   const [newAssignment, setNewAssignment] = useState({
     title: '',
     description: '',

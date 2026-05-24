@@ -1051,8 +1051,17 @@ body {
 
 .loading {
   text-align: center;
-  color: var(--text-muted);
+  color: var(--text);
   padding: 2rem;
+  font-size: 1.1rem;
+}
+
+.error {
+  text-align: center;
+  color: var(--error);
+  padding: 2rem;
+  font-size: 1.1rem;
+  font-weight: 500;
 }
 
 .message {

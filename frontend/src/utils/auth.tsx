@@ -42,7 +42,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setUser({
             id: response.data.id,
             username: response.data.username,
-            role: response.data.role
+            role: String(response.data.role).toUpperCase()
           });
         })
         .catch(() => {
@@ -61,21 +61,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       const response = await api.post('/auth/login', { username, password });
       const { token, role } = response.data;
+      const normalizedRole = String(role).toUpperCase();
 
       localStorage.setItem('token', token);
-      localStorage.setItem('role', role);
+      localStorage.setItem('role', normalizedRole);
 
-      // Fetch full profile for student
-      if (role === 'STUDENT') {
-        const profileRes = await api.get('/student/profile');
-        const profileData = profileRes.data;
-        setUser({
-          id: profileData.id,
-          username: profileData.username,
-          role: profileData.role
-        });
+      if (normalizedRole === 'STUDENT') {
+        try {
+          const profileRes = await api.get('/student/profile');
+          const profileData = profileRes.data;
+          setUser({
+            id: profileData.id,
+            username: profileData.username ?? username,
+            role: normalizedRole
+          });
+        } catch {
+          setUser({ id: 0, username, role: normalizedRole });
+        }
       } else {
-        setUser({ id: 0, username, role });
+        setUser({ id: 0, username, role: normalizedRole });
       }
     } catch (error) {
       throw error;

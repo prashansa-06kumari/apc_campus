@@ -12,6 +12,16 @@ interface StudentProfile {
   role: string;
   studentId: string;
   cgpa?: number;
+  rollNumber?: string;
+  department?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  academicYear?: string;
+  semester?: string;
+  sgpaSem1?: number;
+  sgpaSem2?: number;
+  sgpaSem3?: number;
 }
 
 interface TimetableEntry {
@@ -234,33 +244,52 @@ const handleSubmitTest = async (testId: number, submissionText: string) => {
 const fetchDashboardData = async () => {
   try {
     setLoading(true);
+    setError(null);
 
-    // Only call the APIs you actually need
-    const [profileRes, timetableRes, attendanceRes, testsRes, testResultsRes, marksRes] = await Promise.all([
+    const results = await Promise.allSettled([
       api.get('/student/profile'),
       api.get('/student/timetable/today'),
       api.get('/student/attendance'),
       api.get('/student/tests'),
       api.get('/student/test-results'),
-      api.get('/student/marks')
+      api.get('/student/marks'),
+      api.get('/student/notifications'),
     ]);
 
-    // Use optional chaining to prevent undefined errors
-    const profileData = profileRes?.data || null;
-    if (profileData && marksRes?.data?.cgpa !== undefined) {
-      profileData.cgpa = marksRes.data.cgpa;
+    const getData = (index: number) =>
+      results[index].status === 'fulfilled' ? results[index].value.data : null;
+
+    const profileData = getData(0);
+    const marksData = getData(5);
+
+    if (profileData) {
+      if (marksData?.cgpa !== undefined) {
+        profileData.cgpa = marksData.cgpa;
+      }
+      setProfile(profileData);
     }
-    setProfile(profileData);
-    setTimetable(timetableRes?.data?.timetable || []);
-    setAttendance(attendanceRes?.data || []);
-    setTests(testsRes?.data || []);
-    setTestResults(testResultsRes?.data || []);
-    setMarks(marksRes?.data?.marks || []);
 
-    // Fetch notifications separately
-    const notificationsRes = await api.get('/student/notifications');
-    setNotifications(notificationsRes?.data || []);
+    const timetableData = getData(1);
+    setTimetable(Array.isArray(timetableData?.timetable) ? timetableData.timetable : []);
 
+    const attendanceData = getData(2);
+    setAttendance(Array.isArray(attendanceData) ? attendanceData : []);
+
+    const testsData = getData(3);
+    setTests(Array.isArray(testsData) ? testsData : []);
+
+    const testResultsData = getData(4);
+    setTestResults(Array.isArray(testResultsData) ? testResultsData : []);
+
+    setMarks(Array.isArray(marksData?.marks) ? marksData.marks : []);
+
+    const notificationsData = getData(6);
+    setNotifications(Array.isArray(notificationsData) ? notificationsData : []);
+
+    const allFailed = results.every((result) => result.status === 'rejected');
+    if (allFailed) {
+      setError('Could not load dashboard data. Check that the API is running on Render.');
+    }
   } catch (err) {
     setError('Failed to fetch dashboard data');
     console.error('Error fetching dashboard data:', err);
@@ -297,7 +326,10 @@ const fetchDashboardData = async () => {
   if (loading) {
     return (
       <div className="dashboard-container">
-        <div className="loading">Loading dashboard...</div>
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Loading dashboard...</p>
+        </div>
       </div>
     );
   }
